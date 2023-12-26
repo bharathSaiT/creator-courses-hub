@@ -1,13 +1,68 @@
 const express = require("express");
-
+const jwt = require("jsonwebtoken");
 const app= express();
 const port = 2999;
 const fs = require("fs");
 app.use(express.json());
 
+const secretKeyAdmin = "sause";
+const secretKeyUser = "sausage";
 
 
+const generateAdminJwt = (user) => {
+    const payload = {username  :user.username};
+    return jwt.sign(payload ,secretKeyAdmin,{expiresIn :'4h'})
+}
 
+const generateUserJwt = (user) => {
+    const payload = {username  :user.username};
+    return jwt.sign(payload ,secretKeyUser,{expiresIn :'4h'})
+}
+
+const authenticateAdminJwt = (req,res,next) => {
+    const authHeader = req.headers.authorization;
+    if(authHeader){
+        const token = authHeader.split(" ")[1];
+        jwt.verify(token, secretKeyAdmin, (err, user) => {
+            if (err) {
+              return res.sendStatus(403);
+            }
+      
+            req.user = user;
+            next();
+          });
+        // jwt.verify(token,secretKey).then((err,data)=>{
+        //     if(err){
+        //         return res.sendStatus(403);// access to the requested resource is forbidden
+        //     }
+        //     else{
+        //         req.user = data;
+        //         next();
+        //     }
+        // })
+    }
+    else{
+        res.sendStatus(401);
+    }
+
+}
+const authenticateUserJwt = (req,res,next) => {
+    const authHeader = req.headers.authorization;
+    if(authHeader){
+        const token = authHeader.split(" ")[1];
+        jwt.verify(token, secretKeyUser, (err, user) => {
+            if (err) {
+              return res.sendStatus(403);
+            }
+            req.user = user;
+            next();
+          });
+    }
+    else{
+        res.sendStatus(401);
+    }
+
+}
 //Creates a new admin account
 // how to tackle duplicacy?
 app.post('/admin/signup',(req,res)=>{
@@ -42,135 +97,73 @@ app.post('/admin/signup',(req,res)=>{
 })
 //Authenticates an admin.
 app.post('/admin/login' , (req,res)=>{
-    var username = req.headers.username;
-    var password = req.headers.password;
+    var {username , password } = req.headers;
     fs.readFile(__dirname+"/admin.json",(err,data)=>{
         var adminList = JSON.parse(data);
 
         var checkAdmin = adminList.find((admin)=>{
             if(admin.username == username && admin.password== password){
-                res.send("admin logged in");
+                const token  = generateAdminJwt(username);
+                res.json({message : "admin logged in " , token});
                 return admin;
             }
         })
         console.log(checkAdmin);
         if(checkAdmin == undefined){
-            res.status(401).send("invalid credentials");
+            res.status(403).send("invalid credentials");
         }
     })
 
 })
 //Creates a new course
-app.post('/admin/courses',(req,res)=>{
-    var username = req.headers.username;
-    var password = req.headers.password;
-    fs.readFile(__dirname+"/admin.json",(err,data)=>{
-        var adminList = JSON.parse(data);
+app.post('/admin/courses', authenticateAdminJwt, (req,res)=>{
+    const course = req.body;
+    course.id =  Math.floor(Math.random()*1000);
+                // var newCourse = {
+                //     title: req.body.title,
+                //     description: req.body.description,
+                //     price: req.body.price,
+                //     imagelink: req.body.imagelink,
+                //     published: req.body.published,
+                //     courseid: Math.floor(Math.random()*1000),
+                //     adminid : admin.id
+                // }
 
-        var checkAdmin = adminList.find((admin)=>{
-            if(admin.username == username && admin.password== password){
-                var newCourse = {
-                    title: req.body.title,
-                    description: req.body.description,
-                    price: req.body.price,
-                    imagelink: req.body.imagelink,
-                    published: req.body.published,
-                    courseid: Math.floor(Math.random()*1000),
-                    adminid : admin.id
-                }
+    var courseList = JSON.parse(fs.readFileSync(__dirname+"/courses.json"));
+    courseList.push(course);
+    fs.writeFileSync(__dirname+"/courses.json",JSON.stringify(courseList));
+    console.log(courseList);
+    res.send("course created successfuly");
+    return admin;
 
-                var courseList = JSON.parse(fs.readFileSync(__dirname+"/courses.json"));
-                courseList.push(newCourse);
-                fs.writeFileSync(__dirname+"/courses.json",JSON.stringify(courseList));
-                console.log(courseList);
-                res.send("course created successfuly");
-                return admin;
-            }
-        })
-        
-        if(checkAdmin == undefined){
-            res.status(401).send("invalid credentials");
-        }
-    })
 
 })
 
 //Edits an existing course
-app.put("/admin/course/:courseid",(req,res)=>{
-    var courseid = req.params.courseid;
-    var username = req.headers.username;
-    var password = req.headers.password;
-
-    fs.readFile(__dirname+"/admin.json",(err,data)=>{
-        var adminList = JSON.parse(data);
-        var checkAdmin = adminList.find((admin)=>{
-            if(admin.username == username && admin.password== password){
-                var courseList = JSON.parse(fs.readFileSync(__dirname+"/courses.json"));
-                var updatedCourse = {
-                    title: req.body.title,
-                    description: req.body.description,
-                    price: req.body.price,
-                    imagelink: req.body.imagelink,
-                    published: req.body.published,
-                    courseid: Math.floor(Math.random()*1000),
-                    adminid : admin.id
-                }
-                var checkCourse = -1;
-                for(var i =0;i< courseList.length;i++){
-                    if(courseList[i].courseid == courseid){
-                        checkCourse =i;
-                        break;
-                    }
-                }
-                if(checkCourse != -1){
-                    if(courseList[checkCourse].adminid == admin.id){
-                        courseList[checkCourse] = updatedCourse;
-
-                        fs.writeFileSync(__dirname+"/courses.json",JSON.stringify(courseList));
-                        console.log(courseList);
-                        res.send("course updated successfuly");
-                    }
-                    else{
-                        res.send("you dont have access to update this course");
-                    }
-                }
-                else{
-                    res.status(400).send("invalid courseid");
-                }
-
-                
-                return admin;
-            }
-        })
-        
-        if(checkAdmin == undefined){
-            res.status(401).send("invalid credentials");
-        }
-    })
-    
-
-
+app.put("/admin/course/:courseid",authenticateAdminJwt,(req,res)=>{
+    var courseid = parseInt(req.params.courseid);
+    var courseList = JSON.parse(fs.readFileSync(__dirname+"/courses.json"));
+    var index = courseList.findIndex(c => c.id === courseid);
+    console.log(index);
+    if(index!= -1){
+        var updatedCourse = { ...courseList[index],...req.body};
+        courseList[index] = updatedCourse;
+        //Object.assign(checkCourse , req.body);
+        fs.writeFileSync(__dirname+"/courses.json",JSON.stringify(courseList));
+        res.send("course updated successfuly");
+    }
+    else{
+        res.status(400).send("invalid courseid");
+    }             
+            
 })
 
 //Returns all the courses
-app.get("/admin/courses",(req,res)=>{
-    var username = req.headers.username;
-    var password = req.headers.password;
-    fs.readFile(__dirname+"/admin.json",(err,data)=>{
-        var adminList = JSON.parse(data);
+app.get("/admin/courses",authenticateAdminJwt ,(req,res)=>{
 
-        var checkAdmin = adminList.find((admin)=>{
-            if(admin.username == username && admin.password== password){
-                var courseList = JSON.parse(fs.readFileSync(__dirname+"/courses.json"));
-                res.send(courseList);
-                return admin;
-            }
-        })
-        console.log(checkAdmin);
-        if(checkAdmin == undefined){
-            res.status(401).send("invalid credentials");
-        }
-    })
+    var courseList = JSON.parse(fs.readFileSync(__dirname+"/courses.json"));
+    res.send(courseList);        
+
 })
 //USER
 //creates a user
@@ -213,7 +206,8 @@ app.post('/user/login' , (req,res)=>{
 
         var checkUser = userList.find((user)=>{
             if(user.username == username && user.password== password){
-                res.send("user logged in");
+                const token  = generateUserJwt(username);
+                res.json({message : "user logged in " , token});
                 return user;
             }
         })
@@ -224,29 +218,15 @@ app.post('/user/login' , (req,res)=>{
 
 })
 //get all the courses for valid users
-app.get("/user/courses",(req,res)=>{
-    var username = req.headers.username;
-    var password = req.headers.password;
-    fs.readFile(__dirname+"/users.json",(err,data)=>{
-        var userList = JSON.parse(data);
-
-        var checkUser = userList.find((user)=>{
-            if(user.username == username && user.password== password){
-                var courseList = JSON.parse(fs.readFileSync(__dirname+"/courses.json"));
-                res.send(courseList);
-                return user;
-            }
-        })
-        if(checkUser == undefined){
-            res.status(401).send("invalid credentials");
-        }
-    })
+app.get("/user/courses", authenticateUserJwt ,(req,res)=>{
+    var courseList = JSON.parse(fs.readFileSync(__dirname+"/courses.json"));
+    res.send(courseList);
+    return user;     
 })
 
 //purchase a course
 
 //get all purchased courses
-
 
 
 app.listen(port ,()=>{
