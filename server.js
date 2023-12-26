@@ -27,24 +27,13 @@ const authenticateAdminJwt = (req,res,next) => {
             if (err) {
               return res.sendStatus(403);
             }
-      
-            req.user = user;
             next();
           });
-        // jwt.verify(token,secretKey).then((err,data)=>{
-        //     if(err){
-        //         return res.sendStatus(403);// access to the requested resource is forbidden
-        //     }
-        //     else{
-        //         req.user = data;
-        //         next();
-        //     }
-        // })
+        // jwt.verify(token,secretKey).then((err,data)=> promise is not defined in the signature of jwt.verify
     }
     else{
         res.sendStatus(401);
     }
-
 }
 const authenticateUserJwt = (req,res,next) => {
     const authHeader = req.headers.authorization;
@@ -54,7 +43,6 @@ const authenticateUserJwt = (req,res,next) => {
             if (err) {
               return res.sendStatus(403);
             }
-            req.user = user;
             next();
           });
     }
@@ -172,7 +160,8 @@ app.post('/user/signup',(req,res)=>{
     var newUser = {
         username : req.body.username,
         password : req.body.password,
-        id :Math.floor(Math.random()*1000000)
+        id :Math.floor(Math.random()*1000000),
+        purchasedCourses: []
     }
     fs.readFile(__dirname+"/users.json",(err,data)=>{
 
@@ -220,14 +209,37 @@ app.post('/user/login' , (req,res)=>{
 //get all the courses for valid users
 app.get("/user/courses", authenticateUserJwt ,(req,res)=>{
     var courseList = JSON.parse(fs.readFileSync(__dirname+"/courses.json"));
-    res.send(courseList);
-    return user;     
+    res.send(courseList.filter(c=>c.published ==true));
 })
 
 //purchase a course
+app.post("/user/course/:courseid" ,authenticateUserJwt , (req,res)=>{
+    var courseList = JSON.parse(fs.readFileSync(__dirname+"/courses.json"));
+    const courseId = Number(req.params.courseid);
+    const course = courseList.find(c => c.id === courseId && c.published);
+    if (course) {
+        const username = req.headers.username;
+        const users = JSON.parse(fs.readFileSync(__dirname+"/users.json"));
+        const user = users.find(c=>c.username == username);
 
+        user.purchasedCourses.push(course);
+        fs.writeFileSync(__dirname+"/users.json",JSON.stringify(users));
+        res.json({ message: 'Course purchased successfully' });
+      } else {
+        res.status(404).json({ message: 'Course not found or not available' });
+      }
+})
 //get all purchased courses
-
+app.get("/user/purchasedCourses",authenticateUserJwt,(req,res)=>{
+    const users = JSON.parse(fs.readFileSync(__dirname+"/users.json"));
+    const user = users.find(u => u.username == req.headers.username);
+    if(user){
+        res.json({purchasedCourses : user.purchasedCourses || []});
+    }
+    else{
+        res.status(403).json({ message: 'User not found' });
+    }
+})
 
 app.listen(port ,()=>{
     console.log(`server is listenting , send you shit @ ${port}`);
